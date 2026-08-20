@@ -1,7 +1,7 @@
 {
   "name": "foodflow",
   "private": true,
-  "proxy": "https://res-front-sable.vercel.app",
+  "proxy": "https://res-backend-neon.vercel.app",
   "version": "0.0.0",
   "type": "module",
   "scripts": {

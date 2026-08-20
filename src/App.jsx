@@ -1,7 +1,6 @@
 import { useState } from "react";
 
-const BACKEND =
-  "https://res-front-sable.vercel.app";
+const BACKEND = "https://res-backend-neon.vercel.app";
 
 const AGENT_ID =
   "POS-001";
