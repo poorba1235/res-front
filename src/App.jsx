@@ -1,15 +1,15 @@
 import { useState } from "react";
 
 const BACKEND =
-    "http://localhost:4000";
+  "https://res-front-sable.vercel.app";
 
 const AGENT_ID =
-    "POS-001";
+  "POS-001";
 
 
 function createReceipt() {
 
-    const receipt = `
+  const receipt = `
 ================================
         FOODFLOW POS
 ================================
@@ -37,149 +37,149 @@ TOTAL:                1980.00
         
 `;
 
-    return btoa(receipt);
+  return btoa(receipt);
 }
 
 
 function App() {
 
-    const [status, setStatus] =
-        useState("");
+  const [status, setStatus] =
+    useState("");
 
 
-    const testBackend = async () => {
+  const testBackend = async () => {
 
-        try {
+    try {
 
-            const response =
-                await fetch(
-                    `${BACKEND}/api/health`
-                );
+      const response =
+        await fetch(
+          `${BACKEND}/api/health`
+        );
 
-            const data =
-                await response.json();
+      const data =
+        await response.json();
 
-            setStatus(
-                data.success
-                    ? "Backend connected ✅"
-                    : "Backend error"
-            );
+      setStatus(
+        data.success
+          ? "Backend connected ✅"
+          : "Backend error"
+      );
 
-        } catch (error) {
+    } catch (error) {
 
-            setStatus(
-                "Backend offline ❌"
-            );
+      setStatus(
+        "Backend offline ❌"
+      );
 
-        }
+    }
 
-    };
-
-
-    const print = async () => {
-
-        try {
-
-            setStatus(
-                "Sending print job..."
-            );
+  };
 
 
-            const printData =
-                createReceipt();
+  const print = async () => {
+
+    try {
+
+      setStatus(
+        "Sending print job..."
+      );
 
 
-            const response =
-                await fetch(
-                    `${BACKEND}/api/print`,
-                    {
-                        method: "POST",
-
-                        headers: {
-                            "Content-Type":
-                                "application/json"
-                        },
-
-                        body: JSON.stringify({
-
-                            agentId:
-                                AGENT_ID,
-
-                            printData
-
-                        })
-
-                    }
-                );
+      const printData =
+        createReceipt();
 
 
-            const result =
-                await response.json();
+      const response =
+        await fetch(
+          `${BACKEND}/api/print`,
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+
+            body: JSON.stringify({
+
+              agentId:
+                AGENT_ID,
+
+              printData
+
+            })
+
+          }
+        );
 
 
-            if (!result.success) {
-
-                setStatus(
-                    result.message
-                );
-
-                return;
-            }
+      const result =
+        await response.json();
 
 
-            setStatus(
-                "Print job sent ✅"
-            );
+      if (!result.success) {
 
-        } catch (error) {
+        setStatus(
+          result.message
+        );
 
-            console.error(error);
-
-            setStatus(
-                "Backend connection failed ❌"
-            );
-
-        }
-
-    };
+        return;
+      }
 
 
-    return (
-        <div
-            style={{
-                padding: 40,
-                fontFamily: "Arial"
-            }}
-        >
+      setStatus(
+        "Print job sent ✅"
+      );
 
-            <h1>
-                FoodFlow Print Test
-            </h1>
+    } catch (error) {
 
+      console.error(error);
 
-            <button
-                onClick={testBackend}
-            >
-                Test Backend
-            </button>
+      setStatus(
+        "Backend connection failed ❌"
+      );
+
+    }
+
+  };
 
 
-            <button
-                onClick={print}
-                style={{
-                    marginLeft: 10
-                }}
-            >
-                PRINT
-            </button>
+  return (
+    <div
+      style={{
+        padding: 40,
+        fontFamily: "Arial"
+      }}
+    >
+
+      <h1>
+        FoodFlow Print Test
+      </h1>
 
 
-            <p>
-                {status}
-            </p>
+      <button
+        onClick={testBackend}
+      >
+        Test Backend
+      </button>
 
-        </div>
-    );
+
+      <button
+        onClick={print}
+        style={{
+          marginLeft: 10
+        }}
+      >
+        PRINT
+      </button>
+
+
+      <p>
+        {status}
+      </p>
+
+    </div>
+  );
 
 }
 
