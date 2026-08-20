@@ -1,113 +1,150 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import qz from "qz-tray";
 
-const BACKEND = "https://res-backend-neon.vercel.app";
-
-const BILL_AGENT = "POS-001";
-const KOT_AGENT = "POS-002";
+const BILL_PRINTER = "Soda PDF Desktop 14";
+const KOT_PRINTER = "OneNote for Windows 10";
 
 // ======================================================
-// BILL RECEIPT
+// BILL DATA
 // ======================================================
 
 function createBill() {
-  const receipt = `
-================================
-          FOODFLOW POS
-================================
+    return [
+        "\x1B\x40",
 
-Invoice: INV-0001
-Date: 2026-08-20
-Cashier: admin
+        // Center
+        "\x1B\x61\x01",
 
---------------------------------
-Item              Qty     Price
---------------------------------
-Fried Rice         2    1400.00
-Coke               2     400.00
---------------------------------
+        "FOODFLOW POS\n",
+        "BILL\n",
 
-Subtotal:              1800.00
-Tax:                    180.00
+        // Left
+        "\x1B\x61\x00",
 
-TOTAL:                1980.00
+        "================================\n",
+        "Invoice : INV-0001\n",
+        "Date    : 2026-08-20\n",
+        "Cashier : admin\n",
+        "================================\n",
 
-        THANK YOU!
+        "Item              Qty     Price\n",
+        "--------------------------------\n",
 
-================================
+        "Fried Rice          2   1400.00\n",
+        "Coke                2    400.00\n",
 
+        "--------------------------------\n",
 
-`;
+        "Subtotal              1800.00\n",
+        "Tax                    180.00\n",
 
-  return btoa(receipt);
+        "================================\n",
+
+        "TOTAL                 1980.00\n",
+
+        "================================\n",
+
+        "\x1B\x61\x01",
+
+        "\nTHANK YOU!\n",
+
+        "\n\n\n",
+
+        // Cut
+        "\x1D\x56\x00"
+    ].join("");
 }
 
 // ======================================================
-// KOT
+// KOT DATA
 // ======================================================
 
 function createKOT() {
-  const kot = `
-================================
-             KOT
-================================
+    return [
+        "\x1B\x40",
 
-Order: INV-0001
-Date: 2026-08-20
-Time: 20:30
-Cashier: admin
+        "\x1B\x61\x01",
 
---------------------------------
-ITEM              QTY
---------------------------------
+        "FOODFLOW\n",
+        "KITCHEN ORDER\n",
 
-Fried Rice          2
-Coke                2
+        "\x1B\x61\x00",
 
---------------------------------
+        "================================\n",
 
-         KITCHEN
-         ORDER
+        "ORDER : INV-0001\n",
+        "DATE  : 2026-08-20\n",
+        "TIME  : 20:30\n",
 
-================================
+        "================================\n",
 
+        "ITEM                    QTY\n",
+        "--------------------------------\n",
 
+        "Fried Rice                2\n",
+        "Coke                      2\n",
 
-`;
+        "--------------------------------\n",
 
-  return btoa(kot);
+        "\x1B\x61\x01",
+
+        "       KITCHEN\n",
+        "        ORDER\n",
+
+        "\n\n\n",
+
+        "\x1D\x56\x00"
+    ].join("");
 }
 
 // ======================================================
-// SEND PRINT JOB
+// QZ CONNECTION
 // ======================================================
 
-async function sendPrintJob(agentId, printData) {
-  const response = await fetch(
-    `${BACKEND}/api/print`,
-    {
-      method: "POST",
-
-      headers: {
-        "Content-Type": "application/json"
-      },
-
-      body: JSON.stringify({
-        agentId,
-        printData
-      })
+async function connectQZ() {
+    if (!qz.websocket.isActive()) {
+        await qz.websocket.connect();
     }
-  );
+}
 
-  const result = await response.json();
+// ======================================================
+// GET PRINTERS
+// ======================================================
 
-  if (!response.ok || !result.success) {
-    throw new Error(
-      result.message ||
-      `Print failed for ${agentId}`
+async function findPrinters() {
+    await connectQZ();
+
+    const printers =
+        await qz.printers.find();
+
+    return printers;
+}
+
+// ======================================================
+// PRINT RAW ESC/POS
+// ======================================================
+
+async function printRaw(
+    printerName,
+    data
+) {
+    await connectQZ();
+
+    const config =
+        qz.configs.create(
+            printerName
+        );
+
+    await qz.print(
+        config,
+        [
+            {
+                type: "raw",
+                format: "plain",
+                data: data
+            }
+        ]
     );
-  }
-
-  return result;
 }
 
 // ======================================================
@@ -115,419 +152,663 @@ async function sendPrintJob(agentId, printData) {
 // ======================================================
 
 function App() {
-  const [status, setStatus] = useState("");
-  const [printing, setPrinting] = useState(false);
 
-  const [agentStatus, setAgentStatus] = useState({
-    bill: "Unknown",
-    kot: "Unknown"
-  });
+    const [connected, setConnected] =
+        useState(false);
 
-  // ====================================================
-  // TEST BACKEND
-  // ====================================================
+    const [printers, setPrinters] =
+        useState([]);
 
-  const testBackend = async () => {
-    try {
-      setStatus("Checking backend...");
+    const [status, setStatus] =
+        useState("Ready");
 
-      const response = await fetch(
-        `${BACKEND}/api/health`
-      );
+    const [printing, setPrinting] =
+        useState(false);
 
-      const data = await response.json();
+    // ==================================================
+    // CONNECT WHEN APP LOADS
+    // ==================================================
 
-      if (!data.success) {
-        setStatus("Backend error ❌");
-        return;
-      }
+    useEffect(() => {
 
-      const agents = data.agents || [];
+        connectQZ()
+            .then(() => {
 
-      const billOnline =
-        agents.includes(BILL_AGENT);
+                setConnected(true);
 
-      const kotOnline =
-        agents.includes(KOT_AGENT);
+                setStatus(
+                    "QZ Tray connected ✅"
+                );
 
-      setAgentStatus({
-        bill: billOnline
-          ? "Online"
-          : "Offline",
+            })
+            .catch((error) => {
 
-        kot: kotOnline
-          ? "Online"
-          : "Offline"
-      });
+                console.error(error);
 
-      setStatus(
-        `Backend connected ✅`
-      );
+                setConnected(false);
 
-    } catch (error) {
-      console.error(error);
+                setStatus(
+                    "QZ Tray not connected ❌"
+                );
 
-      setStatus(
-        "Backend connection failed ❌"
-      );
-    }
-  };
+            });
 
-  // ====================================================
-  // PRINT BILL + KOT
-  // ====================================================
+    }, []);
 
-  const printOrder = async () => {
-    if (printing) {
-      return;
-    }
+    // ==================================================
+    // CONNECT BUTTON
+    // ==================================================
 
-    try {
-      setPrinting(true);
+    const handleConnect =
+        async () => {
 
-      setStatus(
-        "Sending BILL and KOT..."
-      );
+            try {
 
-      // -----------------------------------------------
-      // Create print data
-      // -----------------------------------------------
+                setStatus(
+                    "Connecting to QZ Tray..."
+                );
 
-      const billData =
-        createBill();
+                await connectQZ();
 
-      const kotData =
-        createKOT();
+                setConnected(true);
 
-      // -----------------------------------------------
-      // Send BILL and KOT simultaneously
-      // -----------------------------------------------
+                setStatus(
+                    "QZ Tray connected ✅"
+                );
 
-      const [
-        billResult,
-        kotResult
-      ] = await Promise.allSettled([
+            } catch (error) {
 
-        sendPrintJob(
-          BILL_AGENT,
-          billData
-        ),
+                console.error(error);
 
-        sendPrintJob(
-          KOT_AGENT,
-          kotData
-        )
+                setConnected(false);
 
-      ]);
+                setStatus(
+                    `QZ connection failed: ${error.message}`
+                );
 
-      // -----------------------------------------------
-      // BILL result
-      // -----------------------------------------------
+            }
 
-      const billSuccess =
-        billResult.status === "fulfilled";
+        };
 
-      // -----------------------------------------------
-      // KOT result
-      // -----------------------------------------------
+    // ==================================================
+    // FIND PRINTERS
+    // ==================================================
 
-      const kotSuccess =
-        kotResult.status === "fulfilled";
+    const handleFindPrinters =
+        async () => {
 
-      // -----------------------------------------------
-      // Update agent status
-      // -----------------------------------------------
+            try {
 
-      setAgentStatus({
+                setStatus(
+                    "Finding printers..."
+                );
 
-        bill:
-          billSuccess
-            ? "Printed"
-            : "Offline / Failed",
+                const list =
+                    await findPrinters();
 
-        kot:
-          kotSuccess
-            ? "Printed"
-            : "Offline / Failed"
+                console.log(
+                    "QZ Printers:",
+                    list
+                );
 
-      });
+                setPrinters(list);
 
-      // -----------------------------------------------
-      // Both successful
-      // -----------------------------------------------
+                setStatus(
+                    `${list.length} printer(s) found`
+                );
 
-      if (
-        billSuccess &&
-        kotSuccess
-      ) {
+            } catch (error) {
 
-        setStatus(
-          "BILL + KOT printed successfully ✅"
-        );
+                console.error(error);
 
-        return;
-      }
+                setStatus(
+                    `Printer detection failed: ${error.message}`
+                );
 
-      // -----------------------------------------------
-      // BILL success, KOT failed
-      // -----------------------------------------------
+            }
 
-      if (
-        billSuccess &&
-        !kotSuccess
-      ) {
+        };
 
-        setStatus(
-          "BILL printed ✅ but KOT failed ❌"
-        );
+    // ==================================================
+    // TEST BILL
+    // ==================================================
 
-        return;
-      }
+    const handleBill =
+        async () => {
 
-      // -----------------------------------------------
-      // KOT success, BILL failed
-      // -----------------------------------------------
+            try {
 
-      if (
-        !billSuccess &&
-        kotSuccess
-      ) {
+                setPrinting(true);
 
-        setStatus(
-          "KOT printed ✅ but BILL failed ❌"
-        );
+                setStatus(
+                    "Printing BILL..."
+                );
 
-        return;
-      }
+                const bill =
+                    createBill();
 
-      // -----------------------------------------------
-      // Both failed
-      // -----------------------------------------------
+                await printRaw(
+                    BILL_PRINTER,
+                    bill
+                );
 
-      setStatus(
-        "BILL and KOT printing failed ❌"
-      );
+                setStatus(
+                    "BILL printed successfully ✅"
+                );
 
-    } catch (error) {
+            } catch (error) {
 
-      console.error(
-        "Print error:",
-        error
-      );
+                console.error(
+                    "BILL error:",
+                    error
+                );
 
-      setStatus(
-        error.message ||
-        "Print failed ❌"
-      );
+                setStatus(
+                    `BILL failed ❌ ${error.message}`
+                );
 
-    } finally {
+            } finally {
 
-      setPrinting(false);
+                setPrinting(false);
 
-    }
-  };
+            }
 
-  // ====================================================
-  // UI
-  // ====================================================
+        };
 
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#f5f6f8",
-        padding: "40px",
-        fontFamily: "Arial, sans-serif"
-      }}
-    >
+    // ==================================================
+    // TEST KOT
+    // ==================================================
 
-      <div
-        style={{
-          maxWidth: "700px",
-          margin: "0 auto",
-          background: "#fff",
-          padding: "30px",
-          borderRadius: "12px",
-          boxShadow:
-            "0 4px 20px rgba(0,0,0,0.08)"
-        }}
-      >
+    const handleKOT =
+        async () => {
 
-        <h1
-          style={{
-            marginTop: 0
-          }}
-        >
-          FoodFlow Print Test
-        </h1>
+            try {
 
-        <p
-          style={{
-            color: "#666"
-          }}
-        >
-          BILL and KOT printer testing
-        </p>
+                setPrinting(true);
 
-        {/* ==========================================
-            AGENTS
-        =========================================== */}
+                setStatus(
+                    "Printing KOT..."
+                );
+
+                const kot =
+                    createKOT();
+
+                await printRaw(
+                    KOT_PRINTER,
+                    kot
+                );
+
+                setStatus(
+                    "KOT printed successfully ✅"
+                );
+
+            } catch (error) {
+
+                console.error(
+                    "KOT error:",
+                    error
+                );
+
+                setStatus(
+                    `KOT failed ❌ ${error.message}`
+                );
+
+            } finally {
+
+                setPrinting(false);
+
+            }
+
+        };
+
+    // ==================================================
+    // PRINT BOTH
+    // ==================================================
+
+    const handlePrintBoth =
+        async () => {
+
+            if (printing) {
+                return;
+            }
+
+            try {
+
+                setPrinting(true);
+
+                setStatus(
+                    "Printing BILL + KOT..."
+                );
+
+                const bill =
+                    createBill();
+
+                const kot =
+                    createKOT();
+
+                const results =
+                    await Promise.allSettled([
+
+                        printRaw(
+                            BILL_PRINTER,
+                            bill
+                        ),
+
+                        printRaw(
+                            KOT_PRINTER,
+                            kot
+                        )
+
+                    ]);
+
+                const billResult =
+                    results[0];
+
+                const kotResult =
+                    results[1];
+
+                const billSuccess =
+                    billResult.status ===
+                    "fulfilled";
+
+                const kotSuccess =
+                    kotResult.status ===
+                    "fulfilled";
+
+                if (
+                    billSuccess &&
+                    kotSuccess
+                ) {
+
+                    setStatus(
+                        "BILL + KOT printed successfully ✅"
+                    );
+
+                } else if (
+                    billSuccess &&
+                    !kotSuccess
+                ) {
+
+                    console.error(
+                        "KOT:",
+                        kotResult.reason
+                    );
+
+                    setStatus(
+                        "BILL printed ✅ | KOT failed ❌"
+                    );
+
+                } else if (
+                    !billSuccess &&
+                    kotSuccess
+                ) {
+
+                    console.error(
+                        "BILL:",
+                        billResult.reason
+                    );
+
+                    setStatus(
+                        "BILL failed ❌ | KOT printed ✅"
+                    );
+
+                } else {
+
+                    console.error(
+                        "BILL:",
+                        billResult.reason
+                    );
+
+                    console.error(
+                        "KOT:",
+                        kotResult.reason
+                    );
+
+                    setStatus(
+                        "BILL + KOT failed ❌"
+                    );
+
+                }
+
+            } catch (error) {
+
+                console.error(error);
+
+                setStatus(
+                    `Print error: ${error.message}`
+                );
+
+            } finally {
+
+                setPrinting(false);
+
+            }
+
+        };
+
+    // ==================================================
+    // UI
+    // ==================================================
+
+    return (
 
         <div
-          style={{
-            display: "grid",
-            gridTemplateColumns:
-              "1fr 1fr",
-            gap: "15px",
-            marginTop: "25px"
-          }}
+            style={{
+                minHeight: "100vh",
+                background: "#f4f6f8",
+                padding: "40px",
+                fontFamily:
+                    "Arial, sans-serif"
+            }}
         >
 
-          {/* BILL */}
+            <div
+                style={{
+                    maxWidth: "850px",
+                    margin: "auto",
+                    background: "#fff",
+                    padding: "30px",
+                    borderRadius: "14px",
+                    boxShadow:
+                        "0 5px 25px rgba(0,0,0,0.08)"
+                }}
+            >
 
-          <div
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: "10px",
-              padding: "20px"
-            }}
-          >
+                <h1>
+                    FoodFlow Print Test
+                </h1>
 
-            <h3>
-              BILL
-            </h3>
+                <p>
+                    React + QZ Tray + Network Printers
+                </p>
 
-            <p>
-              Agent:{" "}
-              <strong>
-                {BILL_AGENT}
-              </strong>
-            </p>
+                {/* =====================================
+                    CONNECTION
+                ====================================== */}
 
-            <p>
-              Printer: Bill Printer
-            </p>
+                <div
+                    style={{
+                        padding: "15px",
+                        background:
+                            connected
+                                ? "#e8f7ee"
+                                : "#fff0f0",
+                        borderRadius: "8px",
+                        marginTop: "20px"
+                    }}
+                >
 
-            <strong>
-              Status:{" "}
-              {agentStatus.bill}
-            </strong>
+                    <strong>
+                        QZ Tray:
+                    </strong>
 
-          </div>
+                    {" "}
 
-          {/* KOT */}
+                    {connected
+                        ? "Connected ✅"
+                        : "Disconnected ❌"}
 
-          <div
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: "10px",
-              padding: "20px"
-            }}
-          >
+                </div>
 
-            <h3>
-              KOT
-            </h3>
+                <div
+                    style={{
+                        marginTop: "20px"
+                    }}
+                >
 
-            <p>
-              Agent:{" "}
-              <strong>
-                {KOT_AGENT}
-              </strong>
-            </p>
+                    <button
+                        onClick={
+                            handleConnect
+                        }
+                        disabled={
+                            printing
+                        }
+                        style={{
+                            padding:
+                                "12px 20px",
+                            marginRight:
+                                "10px"
+                        }}
+                    >
+                        Connect QZ
+                    </button>
 
-            <p>
-              Printer: Kitchen Printer
-            </p>
+                    <button
+                        onClick={
+                            handleFindPrinters
+                        }
+                        disabled={
+                            printing
+                        }
+                        style={{
+                            padding:
+                                "12px 20px"
+                        }}
+                    >
+                        Find Printers
+                    </button>
 
-            <strong>
-              Status:{" "}
-              {agentStatus.kot}
-            </strong>
+                </div>
 
-          </div>
+                {/* =====================================
+                    PRINTER LIST
+                ====================================== */}
+
+                <div
+                    style={{
+                        marginTop: "20px",
+                        padding: "15px",
+                        background:
+                            "#f5f5f5",
+                        borderRadius: "8px"
+                    }}
+                >
+
+                    <h3>
+                        Detected Printers
+                    </h3>
+
+                    {printers.length === 0 ? (
+
+                        <p>
+                            Click "Find Printers"
+                        </p>
+
+                    ) : (
+
+                        <ul>
+
+                            {printers.map(
+                                (printer) => (
+
+                                    <li
+                                        key={
+                                            printer
+                                        }
+                                    >
+                                        {printer}
+                                    </li>
+
+                                )
+                            )}
+
+                        </ul>
+
+                    )}
+
+                </div>
+
+                {/* =====================================
+                    PRINTER CONFIG
+                ====================================== */}
+
+                <div
+                    style={{
+                        display:
+                            "grid",
+                        gridTemplateColumns:
+                            "1fr 1fr",
+                        gap: "20px",
+                        marginTop: "25px"
+                    }}
+                >
+
+                    {/* BILL */}
+
+                    <div
+                        style={{
+                            border:
+                                "1px solid #ddd",
+                            borderRadius:
+                                "10px",
+                            padding:
+                                "20px"
+                        }}
+                    >
+
+                        <h2>
+                            BILL
+                        </h2>
+
+                        <p>
+                            Printer
+                        </p>
+
+                        <strong>
+                            {BILL_PRINTER}
+                        </strong>
+
+                        <br />
+                        <br />
+
+                        <button
+                            onClick={
+                                handleBill
+                            }
+                            disabled={
+                                printing
+                            }
+                            style={{
+                                padding:
+                                    "12px 20px"
+                            }}
+                        >
+                            TEST BILL
+                        </button>
+
+                    </div>
+
+                    {/* KOT */}
+
+                    <div
+                        style={{
+                            border:
+                                "1px solid #ddd",
+                            borderRadius:
+                                "10px",
+                            padding:
+                                "20px"
+                        }}
+                    >
+
+                        <h2>
+                            KOT
+                        </h2>
+
+                        <p>
+                            Printer
+                        </p>
+
+                        <strong>
+                            {KOT_PRINTER}
+                        </strong>
+
+                        <br />
+                        <br />
+
+                        <button
+                            onClick={
+                                handleKOT
+                            }
+                            disabled={
+                                printing
+                            }
+                            style={{
+                                padding:
+                                    "12px 20px"
+                            }}
+                        >
+                            TEST KOT
+                        </button>
+
+                    </div>
+
+                </div>
+
+                {/* =====================================
+                    PRINT BOTH
+                ====================================== */}
+
+                <button
+                    onClick={
+                        handlePrintBoth
+                    }
+                    disabled={
+                        printing ||
+                        !connected
+                    }
+                    style={{
+                        width: "100%",
+                        marginTop: "25px",
+                        padding: "18px",
+                        fontSize: "18px",
+                        fontWeight: "bold",
+                        cursor:
+                            printing
+                                ? "not-allowed"
+                                : "pointer"
+                    }}
+                >
+
+                    {printing
+                        ? "PRINTING..."
+                        : "PRINT BILL + KOT"}
+
+                </button>
+
+                {/* =====================================
+                    STATUS
+                ====================================== */}
+
+                <div
+                    style={{
+                        marginTop: "25px",
+                        padding: "15px",
+                        background:
+                            "#f1f3f5",
+                        borderRadius: "8px"
+                    }}
+                >
+
+                    <strong>
+                        Status:
+                    </strong>
+
+                    <div
+                        style={{
+                            marginTop: "6px"
+                        }}
+                    >
+                        {status}
+                    </div>
+
+                </div>
+
+            </div>
 
         </div>
 
-        {/* ==========================================
-            BUTTONS
-        =========================================== */}
-
-        <div
-          style={{
-            marginTop: "30px"
-          }}
-        >
-
-          <button
-            onClick={testBackend}
-            disabled={printing}
-            style={{
-              padding:
-                "12px 20px",
-              marginRight: "10px",
-              cursor:
-                printing
-                  ? "not-allowed"
-                  : "pointer"
-            }}
-          >
-            Test Backend
-          </button>
-
-          <button
-            onClick={printOrder}
-            disabled={printing}
-            style={{
-              padding:
-                "12px 30px",
-              cursor:
-                printing
-                  ? "not-allowed"
-                  : "pointer",
-              fontWeight: "bold"
-            }}
-          >
-            {printing
-              ? "PRINTING..."
-              : "PRINT BILL + KOT"}
-          </button>
-
-        </div>
-
-        {/* ==========================================
-            STATUS
-        =========================================== */}
-
-        <div
-          style={{
-            marginTop: "25px",
-            padding: "15px",
-            background: "#f1f3f5",
-            borderRadius: "8px"
-          }}
-        >
-
-          <strong>
-            Status:
-          </strong>
-
-          <div
-            style={{
-              marginTop: "5px"
-            }}
-          >
-            {status ||
-              "Ready to print"}
-
-          </div>
-
-        </div>
-
-      </div>
-
-    </div>
-  );
+    );
 }
 
 export default App;
