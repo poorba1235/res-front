@@ -13,7 +13,7 @@
   "dependencies": {
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "qz-tray": "^2.2.5",
+    "qz-tray": "^2.2.5"
   },
   "devDependencies": {
     "@babel/core": "^7.29.7",
